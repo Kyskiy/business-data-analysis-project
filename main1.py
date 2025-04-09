@@ -26,6 +26,7 @@ historicApiLinks = ["https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDat
                     "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/4385",
                     "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/16319"]
 
+api_key = "382BF27FHEE7GQ5Q2HNQJ83E5"
 
 
 def getTodaysData():
@@ -47,6 +48,29 @@ def getTodaysData():
 
     return pd.DataFrame(todayData)
 
+def getTodayVisualCrossingData(api_key: str, location: str = "Rzeszow,PL"):
+    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/today"
+    params = {
+        "unitGroup": "metric",
+        "include": "hours",
+        "key": api_key,
+        "contentType": "json"
+    }
+
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+    data = response.json()
+
+    hours = [hour for hour in data["days"][0]["hours"] if hour.get("source") == "obs"] #Dane today(obs)
+
+    df = pd.json_normalize(hours)
+    date = data["days"][0]["datetime"]
+    df["Date"] = pd.to_datetime(date + " " + df["datetime"])
+    df.drop(columns=["datetime"], inplace=True)
+    df = df[["Date"] + [col for col in df.columns if col != "Date"]]
+
+    df.to_csv("visualCrossing_today_obs.csv", index=False)
+    print("Saved only 'obs' data to visualCrossing_today_obs.csv")
 
 
 # czasem jest tak ze brakuje danych z jednej lub wielu godzin ale nie tak ze null tylko ze po prostu omija sie dana godzine
@@ -102,8 +126,9 @@ def getHistoricDataOnly20Days(dateFrom, dateTo):
     return pd.DataFrame(historicData)
 
 
-print(getHistoricDataOnly20Days("2022-04-06 15:00", "2022-04-07 19:00"))
+#print(getHistoricDataOnly20Days("2022-04-06 15:00", "2022-04-07 19:00"))
 #getTodaysData().to_csv('TodaysData.csv', index=False)
 
+getTodayVisualCrossingData(api_key)
 
 
