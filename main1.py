@@ -18,10 +18,8 @@ apiLinks = ["https://api.gios.gov.pl/pjp-api/v1/rest/data/getData/20277", "https
             "https://api.gios.gov.pl/pjp-api/v1/rest/data/getData/4385", "https://api.gios.gov.pl/pjp-api/v1/rest/data/getData/4391"]
 
 
-
-
-historicApiLinks = ["https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/16343",
-                    "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/20277",
+historicApiLinks = ["https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/20277",
+                    "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/16343",
                     "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/4391",
                     "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/16344",
                     "https://api.gios.gov.pl/pjp-api/v1/rest/archivalData/getDataBySensor/4385",
@@ -31,7 +29,9 @@ api_key = "382BF27FHEE7GQ5Q2HNQJ83E5"
 
 
 def getTodaysData():
-    todayData = {}
+    todayData = {
+        "Date": [],
+    }
     for sensor in apiLinks:
         dateList = []
         valueList = []
@@ -42,76 +42,11 @@ def getTodaysData():
                 dateList.append(data[i]['Data'])
                 valueList.append(data[i]['Wartość'])
 
+            if len(todayData["Date"]) == 0:
+                todayData.update({"Date": dateList})
             todayData.update({data[i]['Kod stanowiska']: valueList})
-    todayData.update({"Date": dateList})
 
-
-
-    return pd.DataFrame(todayData)
-
-def getTodayVisualCrossingData(api_key: str, location: str = "Rzeszow,PL"):
-    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/today"
-    params = {
-        "unitGroup": "metric",
-        "include": "hours",
-        "key": api_key,
-        "contentType": "json"
-    }
-
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    data = response.json()
-
-    hours = [hour for hour in data["days"][0]["hours"] if hour.get("source") == "obs"] #Dane today(obs)
-
-    df = pd.json_normalize(hours)
-    date = data["days"][0]["datetime"]
-    df["Date"] = pd.to_datetime(date + " " + df["datetime"])
-    df.drop(columns=["datetime"], inplace=True)
-    df = df[["Date"] + [col for col in df.columns if col != "Date"]]
-
-    df.to_csv("visualCrossing_today_obs.csv", index=False)
-    print("Saved only 'obs' data to visualCrossing_today_obs.csv")
-
-def getPast20DaysVisualCrossingData(api_key: str, location: str = "Rzeszow,PL"):
-    # Define date range: from 20 days ago to today
-    end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=19)  # 20 days including today
-
-    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/{start_date}/{end_date}"
-    params = {
-        "unitGroup": "metric",
-        "include": "hours",
-        "key": api_key,
-        "contentType": "json"
-    }
-
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    data = response.json()
-
-    all_obs_rows = []
-
-    for day in data["days"]:
-        date = day["datetime"]  # 'YYYY-MM-DD'
-        for hour in day.get("hours", []):
-            if hour.get("source") == "obs":
-                full_datetime = f"{date} {hour['datetime']}"
-                hour_data = hour.copy()
-                hour_data["Date"] = pd.to_datetime(full_datetime)
-                del hour_data["datetime"]
-                all_obs_rows.append(hour_data)
-
-    # Create DataFrame
-    df = pd.DataFrame(all_obs_rows)
-    df = df[["Date"] + [col for col in df.columns if col != "Date"]]
-
-    # Save to CSV
-    df.to_csv("visualCrossing_past20days_obs.csv", index=False)
-    print("✅ Saved past 20 days of observed data to visualCrossing_past20days_obs.csv")
-
-# czasem jest tak ze brakuje danych z jednej lub wielu godzin ale nie tak ze null tylko ze po prostu omija sie dana godzine
-# napisz ifa ze jezeli kolejna godzina nie jest +1 to trzeba dodac "recznie" datę +1 i wartość null
+    return pd.DataFrame(todayData).sort_values(by=['Date'])
 
 def getHistoricDataOnly20Days(dateFrom, dateTo):
 
@@ -140,32 +75,36 @@ def getHistoricDataOnly20Days(dateFrom, dateTo):
 
     historicData = {}
 
+    dateList = []
+    dateList.append(str(dateF))
+
+    k = 0
+
+    while k < (dateT - dateF).total_seconds() / 3600:
+        dateList.insert(k + 1, str(pd.to_datetime(dateList[k]) + datetime.timedelta(hours=1)))
+        k += 1
+
+    historicData.update({"Date": dateList})
+
     for sensor in historicApiLinks:
-        dateList = []
         valueList = []
+        time.sleep(15)
         response = requests.get(f'{sensor}?size=500&dateFrom={dateF.date()}%20{dateFromHour}%3A{dateFromMinute}'
                                 f'&dateTo={dateT.date()}%20{dateToHour}%3A{dateToMinute}').json()
 
         data = response['Lista archiwalnych wyników pomiarów']
-        #print(len(data))
 
-        for i in range(len(data)):
-            dateList.append(data[i]['Data'])
-            valueList.append(data[i]['Wartość'])
+        for date in dateList:
+            for i in range(len(data)):
+                if date == (data[i]['Data']):
+                    valueList.append(data[i]['Wartość'])
+                    break
+                elif i == len(data)-1:
+                    valueList.append("")
 
         historicData.update({data[i]['Kod stanowiska']: valueList})
 
-        time.sleep(20)
-        historicData.update({"Date": dateList})
-
-
-
     return pd.DataFrame(historicData)
 
-
-#print(getHistoricDataOnly20Days("2022-04-06 15:00", "2022-04-07 19:00"))
-#getTodaysData().to_csv('TodaysData.csv', index=False)
-
-getTodayVisualCrossingData(api_key)
-getPast20DaysVisualCrossingData(api_key)
-
+#getHistoricDataOnly20Days("2023-03-20 00:00", "2023-04-07 00:00").to_csv('HistoricDataOnly20Days.csv', index=False)
+getTodaysData().to_csv('TodaysData.csv', index=False)
