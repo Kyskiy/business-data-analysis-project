@@ -2,6 +2,7 @@ import time
 import requests
 import datetime
 import pandas as pd
+from datetime import datetime, timedelta
 
 '''
 PkRzeszPilsu-PM2.5-1 - 20277
@@ -72,6 +73,42 @@ def getTodayVisualCrossingData(api_key: str, location: str = "Rzeszow,PL"):
     df.to_csv("visualCrossing_today_obs.csv", index=False)
     print("Saved only 'obs' data to visualCrossing_today_obs.csv")
 
+def getPast20DaysVisualCrossingData(api_key: str, location: str = "Rzeszow,PL"):
+    # Define date range: from 20 days ago to today
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=19)  # 20 days including today
+
+    url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{location}/{start_date}/{end_date}"
+    params = {
+        "unitGroup": "metric",
+        "include": "hours",
+        "key": api_key,
+        "contentType": "json"
+    }
+
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+    data = response.json()
+
+    all_obs_rows = []
+
+    for day in data["days"]:
+        date = day["datetime"]  # 'YYYY-MM-DD'
+        for hour in day.get("hours", []):
+            if hour.get("source") == "obs":
+                full_datetime = f"{date} {hour['datetime']}"
+                hour_data = hour.copy()
+                hour_data["Date"] = pd.to_datetime(full_datetime)
+                del hour_data["datetime"]
+                all_obs_rows.append(hour_data)
+
+    # Create DataFrame
+    df = pd.DataFrame(all_obs_rows)
+    df = df[["Date"] + [col for col in df.columns if col != "Date"]]
+
+    # Save to CSV
+    df.to_csv("visualCrossing_past20days_obs.csv", index=False)
+    print("✅ Saved past 20 days of observed data to visualCrossing_past20days_obs.csv")
 
 # czasem jest tak ze brakuje danych z jednej lub wielu godzin ale nie tak ze null tylko ze po prostu omija sie dana godzine
 # napisz ifa ze jezeli kolejna godzina nie jest +1 to trzeba dodac "recznie" datę +1 i wartość null
@@ -130,5 +167,5 @@ def getHistoricDataOnly20Days(dateFrom, dateTo):
 #getTodaysData().to_csv('TodaysData.csv', index=False)
 
 getTodayVisualCrossingData(api_key)
-
+getPast20DaysVisualCrossingData(api_key)
 
